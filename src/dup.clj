@@ -18,31 +18,25 @@
       (.getName (File. f)))))
 
 (defn find-dup [file-entries to-dos dup-agent dup-algorithm]
-  (loop [entries file-entries
-         todos to-dos]
-    (if (empty? entries)
-      todos
-      (let [entry (first entries)]
-        (if (is-file? entry)
-          (do
-            (send-off dup-agent dup-algorithm entry)
-            (recur (rest entries) todos))
-          (do
-            (recur (rest entries)
-              (if (is-directory? entry)
-                (conj (vec todos) entry)
-                todos))))))))
+  (let [todos (transient to-dos)]
+    (doseq [entry file-entries]
+      (if (is-file? entry)
+        (send dup-agent dup-algorithm entry)
+        (when (is-directory? entry)
+          (conj! todos entry))))
+    (persistent! todos)))
 
 (defn find-dups [start-dir dup-agent dup-algo]
   (loop [todos [start-dir]]
     (when-not (empty? todos)
       (let [file-entries (list-of-files (first todos))]
         (if (empty? file-entries)
-          (recur (rest todos))
-          (recur (rest (find-dup file-entries todos dup-agent dup-algo))))))))
+          (recur (-> todos rest vec))
+          (recur (-> (find-dup file-entries todos dup-agent dup-algo)
+                   rest vec)))))))
 
 (defn go []
-  (binding [*dup-algo* parse-by-name
+  (binding [*dup-algo* parse-by-md5
             *dup-agent* (agent {})]
     (println "Starting...")
     (find-dups "/home/gnt/tmp" *dup-agent* *dup-algo*)
